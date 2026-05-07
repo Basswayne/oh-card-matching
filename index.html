@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>兩兩配對分配機</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        .hide { display: none !important; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col items-center justify-center p-2 lg:p-4">
+
+    <!-- 外層容器，加入 transition 讓寬度變化平滑 -->
+    <div id="mainContainer" class="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col transition-all duration-500 ease-in-out" style="min-h: 80vh;">
+        <!-- Header -->
+        <header class="bg-indigo-600 text-white p-4 lg:p-5 text-center relative shrink-0">
+            <h1 class="text-xl lg:text-2xl font-bold tracking-wide"><i class="fas fa-random mr-2"></i>兩兩配對分配機</h1>
+            <p class="text-indigo-200 mt-1.5 text-xs lg:text-sm">學員優先全新組合 ‧ 助教不互配 ‧ 自動保存</p>
+            <div id="loadingStatus" class="absolute top-4 right-4 text-sm text-indigo-200 hide">
+                <i class="fas fa-circle-notch fa-spin"></i> 同步中...
+            </div>
+        </header>
+
+        <main class="flex-1 p-4 lg:p-6 relative flex flex-col min-h-0">
+            
+            <!-- 視圖 1：輸入名單 -->
+            <div id="view-input" class="view-section hide fade-in flex-1">
+                <h2 class="text-lg font-semibold mb-4 text-slate-700">步驟 1：輸入參與者名單</h2>
+                <p class="text-sm text-slate-500 mb-4">請以「斷行」來分隔人名（名字中包含空白或標點符號皆不會被切斷）。<br>※ 助教老師在隨機配對時，一定會與學員搭配，不會與其他助教配對。</p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">助教老師名單 (可留空)</label>
+                        <textarea id="tasRawInput" rows="3" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="例如：&#10;王老師, 李助教"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">學員名單</label>
+                        <textarea id="studentsRawInput" rows="6" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="例如：&#10;小明, 小華&#10;John Doe"></textarea>
+                    </div>
+                </div>
+
+                <button id="btnSubmitNames" class="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors shadow-md">
+                    確認送出名單 <i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+
+            <!-- 視圖 2：準備配對 -->
+            <div id="view-prepare" class="view-section hide fade-in flex-1">
+                <h2 class="text-lg font-semibold text-slate-700 mb-4">步驟 2：確認名單</h2>
+                
+                <div class="space-y-4 mb-6 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                    <!-- 助教列表 -->
+                    <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-sm font-bold text-indigo-800">助教老師</h3>
+                            <span id="taCountBadge" class="bg-indigo-200 text-indigo-800 text-xs font-bold px-2 py-0.5 rounded-full">0 人</span>
+                        </div>
+                        <div id="taListContainer" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    
+                    <!-- 學員列表 -->
+                    <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="text-sm font-bold text-slate-700">學員</h3>
+                            <span id="studentCountBadge" class="bg-slate-200 text-slate-700 text-xs font-bold px-2 py-0.5 rounded-full">0 人</span>
+                        </div>
+                        <div id="studentListContainer" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+
+                <div class="flex gap-2 mb-8">
+                    <select id="singleRoleSelect" class="p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-slate-700">
+                        <option value="student">學員</option>
+                        <option value="ta">助教</option>
+                    </select>
+                    <input type="text" id="singleNameInput" class="flex-1 p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="新增單一人名...">
+                    <button id="btnAddName" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl transition-colors whitespace-nowrap">
+                        <i class="fas fa-plus"></i> 新增
+                    </button>
+                </div>
+
+                <div class="flex gap-4">
+                    <button id="btnViewHistory" class="w-1/3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-4 rounded-xl transition-colors shadow-sm">
+                        查看結果
+                    </button>
+                    <button id="btnStartMatch" class="w-2/3 bg-rose-500 hover:bg-rose-600 text-white font-semibold py-3 px-4 rounded-xl transition-colors shadow-md">
+                        開始隨機配對 <i class="fas fa-bolt ml-2"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 視圖 3：配對結果與紀錄 (左右並排滿版設計) -->
+            <div id="view-result" class="view-section hide fade-in flex flex-col lg:flex-row gap-4 lg:gap-0 h-full p-1 min-h-0">
+                
+                <!-- 左側：當前結果與按鈕 -->
+                <div id="leftPanel" class="w-full lg:w-[25%] xl:w-[22%] flex flex-col gap-4 lg:border-r lg:border-slate-100 lg:pr-4 shrink-0 min-h-0">
+                    
+                    <!-- 當前結果 -->
+                    <div id="currentMatchSection" class="bg-gradient-to-b from-indigo-50 to-white p-3 lg:p-4 rounded-2xl border border-indigo-100 shadow-sm hide flex-col flex flex-1 min-h-0">
+                        <h2 class="text-lg font-bold text-slate-800 mb-3 text-center shrink-0">🎉 本次配對</h2>
+                        <div id="currentMatchCards" class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,210px),1fr))] auto-rows-max gap-3 overflow-y-auto custom-scrollbar pr-1.5 flex-1 min-h-0 content-start">
+                            <!-- 配對卡片動態生成 -->
+                        </div>
+                    </div>
+
+                    <!-- 操作按鈕 -->
+                    <div class="flex flex-col gap-2 shrink-0" id="resultActionButtons">
+                        <button id="btnMatchAgain" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 text-base">
+                            再次配對 <i class="fas fa-redo"></i>
+                        </button>
+                        <div class="flex gap-2">
+                            <button id="btnAdjustList" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-3 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 text-sm">
+                                <i class="fas fa-user-edit"></i>調整名單
+                            </button>
+                            <button id="btnBackToPrepare" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-3 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 text-sm">
+                                <i class="fas fa-list-ul"></i>編輯名單
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 拖曳分隔線 (Resizer) -->
+                <div id="resizer" class="hidden lg:flex w-4 cursor-col-resize shrink-0 items-center justify-center group z-10 relative -ml-2 -mr-2 hover:bg-slate-50 transition-colors" title="左右拖曳調整寬度">
+                    <div class="h-16 w-1.5 bg-slate-200 group-hover:bg-indigo-400 group-active:bg-indigo-500 rounded-full transition-colors pointer-events-none"></div>
+                </div>
+
+                <!-- 右側：歷史紀錄矩陣 -->
+                <div id="rightPanel" class="w-full lg:flex-1 flex flex-col bg-white min-h-[400px] lg:min-h-0 min-w-0 lg:pl-4">
+                    <div class="flex justify-between items-center mb-3 border-b pb-2 shrink-0">
+                        <h3 class="text-base lg:text-lg font-semibold text-slate-800 flex items-center">
+                            <i class="fas fa-table text-indigo-500 mr-2"></i>配對紀錄矩陣
+                        </h3>
+                        <button id="btnClearHistory" class="text-xs lg:text-sm text-rose-500 hover:text-rose-700 transition-colors font-medium flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-rose-50">
+                            <i class="fas fa-trash-alt"></i>清除紀錄
+                        </button>
+                    </div>
+                    
+                    <div id="historyContainer" class="flex-1 overflow-hidden flex flex-col min-h-0 border border-slate-100 rounded-xl">
+                        <!-- 矩陣動態生成 -->
+                    </div>
+                    
+                    <p class="text-xs text-slate-400 mt-2 pt-2 border-t text-center lg:text-left shrink-0">
+                        <i class="fas fa-info-circle mr-1"></i>數字代表配對次數。助教不互配(禁)。劃掉代表暫不參與。<br>
+                        <span class="text-indigo-400">※ 演算法已開啟「學員間優先搭配」策略。</span>
+                    </p>
+                </div>
+            </div>
+            
+            <!-- 載入中遮罩 -->
+            <div id="loadingOverlay" class="absolute inset-0 bg-white/80 backdrop-blur-sm flex flex-col items-center justify-center z-50 hide">
+                <i class="fas fa-circle-notch fa-spin text-4xl text-indigo-600 mb-4"></i>
+                <p class="text-slate-600 font-medium">計算最佳不重複組合中...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- 共用提示 Modal -->
+    <div id="customModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] hide opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden transform scale-95 transition-transform duration-300" id="customModalContent">
+            <div class="p-6">
+                <h3 id="modalTitle" class="text-xl font-bold text-slate-800 mb-2">提示</h3>
+                <p id="modalMessage" class="text-slate-600 mb-6 leading-relaxed">訊息內容</p>
+                <div class="flex gap-3 justify-end">
+                    <button id="btnModalCancel" class="px-5 py-2.5 rounded-xl text-slate-700 bg-slate-100 hover:bg-slate-200 font-medium transition-colors hide">取消</button>
+                    <button id="btnModalConfirm" class="px-5 py-2.5 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 font-medium transition-colors">確定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 調整名單 Modal -->
+    <div id="adjustListModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[105] hide opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 flex flex-col max-h-[80vh] transform scale-95 transition-transform duration-300" id="adjustListModalContent">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-user-check mr-2 text-indigo-600"></i>勾選本輪參與者</h3>
+                <button id="btnCloseAdjustListTop" class="text-slate-400 hover:text-slate-600 transition-colors"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1 custom-scrollbar">
+                <p class="text-sm text-slate-500 mb-4">取消勾選的人員將不會參與下一輪的配對，但仍會保留在下方歷史紀錄矩陣中。</p>
+                <div id="adjustListContainer" class="space-y-2">
+                    <!-- Checkboxes injected here -->
+                </div>
+            </div>
+            <div class="p-5 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3">
+                <button id="btnCancelAdjustList" class="px-5 py-2.5 rounded-xl text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 font-medium transition-colors">取消</button>
+                <button id="btnSaveAdjustList" class="px-5 py-2.5 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 font-medium transition-colors shadow-sm">儲存設定</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[110] flex flex-col gap-2 pointer-events-none"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'match-maker-app';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth, userId;
+        
+        let appState = {
+            students: [],
+            tas: [],
+            history: [],
+            activeStatus: {},
+            allowedMaxCount: 0
+        };
+
+        const mainContainer = document.getElementById('mainContainer');
+        const views = {
+            input: document.getElementById('view-input'),
+            prepare: document.getElementById('view-prepare'),
+            result: document.getElementById('view-result')
+        };
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingStatus = document.getElementById('loadingStatus');
+
+        const modal = document.getElementById('customModal');
+        const modalInner = document.getElementById('customModalContent');
+        const btnModalConfirm = document.getElementById('btnModalConfirm');
+        const btnModalCancel = document.getElementById('btnModalCancel');
+        let modalConfirmCallback = null;
+        let modalCancelCallback = null;
+
+        const adjustListModal = document.getElementById('adjustListModal');
+        const adjustListModalContent = document.getElementById('adjustListModalContent');
+
+        async function initApp() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    renderViewBasedOnState();
+                    return;
+                }
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+                else await signInAnonymously(auth);
+
+                userId = auth.currentUser?.uid;
+                if (!userId) throw new Error("Authentication failed");
+                await loadStateFromFirestore();
+            } catch (error) {
+                console.error("Init error:", error);
+                showToast("雲端連線失敗，目前將無法保存紀錄", "error");
+            } finally {
+                renderViewBasedOnState();
+            }
+        }
+
+        async function loadStateFromFirestore() {
+            if (!db || !userId) return;
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', userId, 'matchData', 'state');
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    appState.students = data.students || [];
+                    appState.tas = data.tas || [];
+                    appState.history = data.history || [];
+                    appState.allowedMaxCount = data.allowedMaxCount || 0;
+                    if (data.activeStatus) {
+                        appState.activeStatus = data.activeStatus;
+                    } else {
+                        [...appState.tas, ...appState.students].forEach(n => appState.activeStatus[n] = true);
+                    }
+                }
+            } catch (err) {
+                console.error("Load state error:", err);
+            }
+        }
+
+        async function saveStateToFirestore() {
+            if (!db || !userId) return;
+            loadingStatus.classList.remove('hide');
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'users', userId, 'matchData', 'state');
+                await setDoc(docRef, appState);
+            } catch (err) {
+                console.error("Save state error:", err);
+            } finally {
+                loadingStatus.classList.add('hide');
+            }
+        }
+
+        function switchView(viewName) {
+            Object.values(views).forEach(v => v.classList.add('hide'));
+            if (views[viewName]) {
+                views[viewName].classList.remove('hide');
+            }
+            
+            // 動態切換容器寬度與高度以支援滿版排版
+            if (viewName === 'result') {
+                mainContainer.classList.remove('max-w-3xl');
+                mainContainer.classList.add('max-w-[98vw]', 'h-[96vh]');
+                mainContainer.style.minHeight = '96vh';
+            } else {
+                mainContainer.classList.remove('max-w-[98vw]', 'h-[96vh]');
+                mainContainer.classList.add('max-w-3xl');
+                mainContainer.style.minHeight = '80vh';
+            }
+        }
+
+        function renderViewBasedOnState() {
+            if (appState.students.length > 0 || appState.tas.length > 0) {
+                updatePrepareView();
+                switchView('prepare');
+            } else {
+                switchView('input');
+            }
+        }
+
+        function showModal(title, message, onConfirm = null, onCancel = null, showCancelBtn = false) {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
+            modalConfirmCallback = onConfirm;
+            modalCancelCallback = onCancel;
+            if (showCancelBtn) btnModalCancel.classList.remove('hide');
+            else btnModalCancel.classList.add('hide');
+            modal.classList.remove('hide');
+            void modal.offsetWidth;
+            modal.classList.remove('opacity-0');
+            modalInner.classList.remove('scale-95');
+        }
+
+        function closeModal() {
+            modal.classList.add('opacity-0');
+            modalInner.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hide'), 300);
+        }
+
+        btnModalConfirm.addEventListener('click', () => { if (modalConfirmCallback) modalConfirmCallback(); closeModal(); });
+        btnModalCancel.addEventListener('click', () => { if (modalCancelCallback) modalCancelCallback(); closeModal(); });
+
+        function showToast(message, type = "info") {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            const bgClass = type === 'error' ? 'bg-rose-500' : 'bg-slate-800';
+            toast.className = `${bgClass} text-white px-4 py-2 rounded-lg shadow-lg text-sm transition-all duration-300 transform translate-y-10 opacity-0`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-y-10', 'opacity-0'));
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        document.getElementById('btnSubmitNames').addEventListener('click', () => {
+            const rawTas = document.getElementById('tasRawInput').value.split(/[\n\r]+/);
+            const rawStudents = document.getElementById('studentsRawInput').value.split(/[\n\r]+/);
+            let tas = [...new Set(rawTas.map(n => n.trim()).filter(n => n.length > 0))];
+            let students = [...new Set(rawStudents.map(n => n.trim()).filter(n => n.length > 0))];
+            students = students.filter(s => !tas.includes(s));
+
+            if (tas.length + students.length < 2) {
+                showModal("人數不足", "請至少輸入總共 2 位參與者。");
+                return;
+            }
+            appState.tas = tas;
+            appState.students = students;
+            [...tas, ...students].forEach(n => {
+                if (appState.activeStatus[n] === undefined) appState.activeStatus[n] = true;
+            });
+            saveStateToFirestore();
+            updatePrepareView();
+            switchView('prepare');
+        });
+
+        function createNameTag(name, type) {
+            const tag = document.createElement('div');
+            const baseClass = type === 'ta' ? "bg-white border-indigo-200 text-indigo-700 hover:border-rose-200" : "bg-white border-slate-200 text-slate-700 hover:border-rose-200";
+            tag.className = `flex items-center gap-2 border px-3 py-1.5 rounded-lg shadow-sm text-sm group transition-colors ${baseClass}`;
+            const span = document.createElement('span');
+            span.textContent = name;
+            const delBtn = document.createElement('button');
+            delBtn.innerHTML = '<i class="fas fa-times text-slate-400 group-hover:text-rose-500 transition-colors"></i>';
+            delBtn.className = "focus:outline-none ml-1";
+            delBtn.onclick = () => removeName(name, type);
+            tag.appendChild(span);
+            tag.appendChild(delBtn);
+            return tag;
+        }
+
+        function updatePrepareView() {
+            document.getElementById('taCountBadge').textContent = `${appState.tas.length} 人`;
+            document.getElementById('studentCountBadge').textContent = `${appState.students.length} 人`;
+            const taContainer = document.getElementById('taListContainer');
+            const studentContainer = document.getElementById('studentListContainer');
+            taContainer.innerHTML = '';
+            studentContainer.innerHTML = '';
+            if (appState.tas.length === 0) taContainer.innerHTML = '<span class="text-slate-400 text-sm">無助教名單</span>';
+            if (appState.students.length === 0) studentContainer.innerHTML = '<span class="text-slate-400 text-sm">無學員名單</span>';
+            appState.tas.forEach(name => taContainer.appendChild(createNameTag(name, 'ta')));
+            appState.students.forEach(name => studentContainer.appendChild(createNameTag(name, 'student')));
+        }
+
+        function removeName(nameToRemove, type) {
+            if (type === 'ta') appState.tas = appState.tas.filter(n => n !== nameToRemove);
+            else appState.students = appState.students.filter(n => n !== nameToRemove);
+            delete appState.activeStatus[nameToRemove];
+            saveStateToFirestore();
+            updatePrepareView();
+            if (appState.tas.length + appState.students.length === 0) switchView('input');
+        }
+
+        document.getElementById('btnAddName').addEventListener('click', () => {
+            const input = document.getElementById('singleNameInput');
+            const role = document.getElementById('singleRoleSelect').value;
+            const newName = input.value.trim();
+            if (!newName) return;
+            if (appState.tas.includes(newName) || appState.students.includes(newName)) {
+                showToast("此人名已在名單中");
+                return;
+            }
+            if (role === 'ta') appState.tas.push(newName);
+            else appState.students.push(newName);
+            appState.activeStatus[newName] = true;
+            input.value = '';
+            saveStateToFirestore();
+            updatePrepareView();
+        });
+
+        document.getElementById('singleNameInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') document.getElementById('btnAddName').click();
+        });
+
+        function openAdjustListModal() {
+            const container = document.getElementById('adjustListContainer');
+            container.innerHTML = '';
+            const createCheckbox = (name, isTa) => {
+                const id = 'chk_' + name;
+                const checked = appState.activeStatus[name] ? 'checked' : '';
+                const roleBadge = isTa ? '<span class="ml-2 text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">助教</span>' : '';
+                return `<label class="flex items-center p-3 border border-slate-200 rounded-xl hover:bg-slate-100 cursor-pointer transition-colors bg-white shadow-sm">
+                        <input type="checkbox" id="${id}" value="${name}" class="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" ${checked}>
+                        <span class="ml-3 text-slate-700 font-medium">${name}</span>${roleBadge}</label>`;
+            };
+            if (appState.tas.length > 0) {
+                container.innerHTML += `<h4 class="text-sm font-bold text-slate-500 mt-2 mb-2 px-1">助教列表</h4>`;
+                appState.tas.forEach(name => container.innerHTML += createCheckbox(name, true));
+            }
+            if (appState.students.length > 0) {
+                container.innerHTML += `<h4 class="text-sm font-bold text-slate-500 mt-4 mb-2 px-1">學員列表</h4>`;
+                appState.students.forEach(name => container.innerHTML += createCheckbox(name, false));
+            }
+            adjustListModal.classList.remove('hide');
+            void adjustListModal.offsetWidth;
+            adjustListModal.classList.remove('opacity-0');
+            adjustListModalContent.classList.remove('scale-95');
+        }
+
+        function closeAdjustListModal() {
+            adjustListModal.classList.add('opacity-0');
+            adjustListModalContent.classList.add('scale-95');
+            setTimeout(() => adjustListModal.classList.add('hide'), 300);
+        }
+
+        document.getElementById('btnAdjustList').addEventListener('click', openAdjustListModal);
+        document.getElementById('btnCloseAdjustListTop').addEventListener('click', closeAdjustListModal);
+        document.getElementById('btnCancelAdjustList').addEventListener('click', closeAdjustListModal);
+
+        document.getElementById('btnSaveAdjustList').addEventListener('click', () => {
+            document.querySelectorAll('#adjustListContainer input[type="checkbox"]').forEach(input => {
+                appState.activeStatus[input.value] = input.checked;
+            });
+            saveStateToFirestore();
+            closeAdjustListModal();
+            showToast("配對名單設定已儲存");
+            renderMatrix(); 
+        });
+
+        function shuffleArray(array) {
+            let arr = [...array];
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            return arr;
+        }
+
+        // 演算法升級：加入 Penalty 機制讓學員優先配對
+        function generateOptimizedMatch(activeStudents, activeTas) {
+            const totalPeople = activeStudents.length + activeTas.length;
+            if (totalPeople < 2) return null;
+
+            const numGroups = Math.floor(totalPeople / 2);
+            if (activeTas.length > numGroups) return { error: "TA_OVERFLOW" };
+
+            const counts = {};
+            const allNames = [...appState.tas, ...appState.students];
+            allNames.forEach(n1 => {
+                counts[n1] = {};
+                allNames.forEach(n2 => { counts[n1][n2] = 0; });
+            });
+            
+            appState.history.forEach(record => {
+                record.pairs.forEach(pairObj => {
+                    const group = Array.isArray(pairObj) ? pairObj : pairObj.members;
+                    for(let i=0; i<group.length; i++) {
+                        for(let j=i+1; j<group.length; j++) {
+                            counts[group[i]][group[j]]++;
+                            counts[group[j]][group[i]]++;
+                        }
+                    }
+                });
+            });
+
+            const MAX_ATTEMPTS = 5000;
+            let bestGroups = null;
+            let minMaxEdge = Infinity; 
+            let minSumEdge = Infinity; 
+            let minPenalty = Infinity; // 新增：用於減少不必要的助教配學員
+
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+                let capacities = Array(numGroups).fill(2);
+                if (totalPeople % 2 !== 0) {
+                    capacities[Math.floor(Math.random() * numGroups)] = 3;
+                }
+
+                let groups = capacities.map(cap => ({ capacity: cap, members: [] }));
+
+                // 分配助教
+                let shuffledTAs = shuffleArray(activeTas);
+                let shuffledGroupIndices = shuffleArray(Array.from({length: numGroups}, (_, i) => i));
+                for (let i = 0; i < shuffledTAs.length; i++) {
+                    groups[shuffledGroupIndices[i]].members.push(shuffledTAs[i]);
+                }
+
+                // 分配學員
+                let shuffledStudents = shuffleArray(activeStudents);
+                let studentIdx = 0;
+                for (let g of groups) {
+                    while (g.members.length < g.capacity && studentIdx < shuffledStudents.length) {
+                        g.members.push(shuffledStudents[studentIdx]);
+                        studentIdx++;
+                    }
+                }
+
+                let pairs = groups.map(g => g.members);
+                
+                let currentMaxEdge = 0;
+                let currentSumEdge = 0;
+                let currentPenalty = 0;
+
+                for (let group of pairs) {
+                    for(let i=0; i<group.length; i++) {
+                        for(let j=i+1; j<group.length; j++) {
+                            let n1 = group[i], n2 = group[j];
+                            let c = counts[n1][n2] || 0;
+                            if (c > currentMaxEdge) currentMaxEdge = c;
+                            currentSumEdge += c;
+
+                            // Penalty: 如果是學員配助教，給予懲罰分數，讓演算法傾向學員互配
+                            const isN1Ta = appState.tas.includes(n1);
+                            const isN2Ta = appState.tas.includes(n2);
+                            if (isN1Ta !== isN2Ta) {
+                                currentPenalty += 1;
+                            }
+                        }
+                    }
+                }
+
+                // 比較並記錄最佳解 (考慮了 Penalty)
+                if (currentMaxEdge < minMaxEdge || 
+                   (currentMaxEdge === minMaxEdge && currentSumEdge < minSumEdge) ||
+                   (currentMaxEdge === minMaxEdge && currentSumEdge === minSumEdge && currentPenalty < minPenalty)) {
+                    minMaxEdge = currentMaxEdge;
+                    minSumEdge = currentSumEdge;
+                    minPenalty = currentPenalty;
+                    bestGroups = pairs;
+                }
+
+                // 提早結束條件：0重複且 Penalty 已達理論最低(每個助教必定佔用1學員)
+                if (minMaxEdge === 0 && minSumEdge === 0 && minPenalty === activeTas.length) {
+                    break; 
+                }
+            }
+
+            return { pairs: bestGroups, maxEdge: minMaxEdge };
+        }
+
+        document.getElementById('btnStartMatch').addEventListener('click', performMatch);
+        document.getElementById('btnMatchAgain').addEventListener('click', performMatch);
+        document.getElementById('btnViewHistory').addEventListener('click', () => {
+            updateResultView(null);
+            switchView('result');
+        });
+
+        function performMatch() {
+            const activeTas = appState.tas.filter(n => appState.activeStatus[n]);
+            const activeStudents = appState.students.filter(n => appState.activeStatus[n]);
+            const totalActive = activeTas.length + activeStudents.length;
+
+            if (totalActive < 2) {
+                showModal("人數不足", `目前勾選人數僅 ${totalActive} 人，請至少勾選兩位參與者。`);
+                return;
+            }
+
+            loadingOverlay.classList.remove('hide');
+            
+            setTimeout(() => {
+                const matchResult = generateOptimizedMatch(activeStudents, activeTas);
+                
+                if (matchResult && matchResult.error === "TA_OVERFLOW") {
+                    loadingOverlay.classList.add('hide');
+                    showModal("助教人數過多", "目前「參與本輪」的助教人數大於能分配的組數，無法保證『助教不與助教配對』。請增加學員或減少助教參與。");
+                    return;
+                }
+
+                const { pairs, maxEdge } = matchResult;
+
+                if (maxEdge > appState.allowedMaxCount) {
+                    loadingOverlay.classList.add('hide');
+                    showModal(
+                        "全新組合已全數耗盡！", 
+                        `勾選名單中已經沒有從未配對過的組合了。系統需開始允許「配對過 ${maxEdge} 次」的組合，是否繼續？`,
+                        () => {
+                            appState.allowedMaxCount = maxEdge;
+                            saveStateToFirestore();
+                            showToast("已自動放寬配對限制");
+                            performMatch();
+                        },
+                        null, true
+                    );
+                    return;
+                }
+
+                const matchData = {
+                    id: Date.now(),
+                    timestamp: new Date().toISOString(),
+                    pairs: pairs.map(group => ({ members: group }))
+                };
+                
+                appState.history.unshift(matchData);
+                saveStateToFirestore();
+                
+                updateResultView(matchData);
+                switchView('result');
+                loadingOverlay.classList.add('hide');
+                document.getElementById('currentMatchCards').classList.add('fade-in');
+            }, 50);
+        }
+
+        function updateResultView(currentMatch) {
+            const currentSection = document.getElementById('currentMatchSection');
+            const currentCards = document.getElementById('currentMatchCards');
+            
+            if (currentMatch) {
+                currentSection.classList.remove('hide');
+                currentCards.innerHTML = '';
+                
+                currentMatch.pairs.forEach((pairObj) => {
+                    const group = Array.isArray(pairObj) ? pairObj : pairObj.members;
+                    const card = document.createElement('div');
+                    card.className = "bg-white p-3 lg:p-4 rounded-xl border border-indigo-100 shadow-sm flex items-center justify-center text-center h-full break-inside-avoid";
+                    
+                    const formattedNames = group.map(n => {
+                        return appState.tas.includes(n) ? `<span class="text-indigo-600 underline decoration-indigo-300 underline-offset-4">${n}</span><span class="text-xs text-indigo-400 ml-1">(助)</span>` : n;
+                    });
+
+                    const text = formattedNames.join(' <span class="mx-1.5 text-rose-400 shrink-0"><i class="fas fa-link"></i></span> ');
+                    card.innerHTML = `<span class="text-sm lg:text-base font-bold text-slate-800 break-words leading-relaxed">${text}</span>`;
+                    
+                    if (group.length === 3) {
+                        card.className += " border-rose-100 bg-rose-50 relative pt-6 lg:pt-7";
+                        card.innerHTML += `<div class="absolute top-1.5 right-1.5 text-[10px] bg-rose-200 text-rose-800 px-2 py-0.5 rounded-full shadow-sm">3人組</div>`;
+                    }
+                    
+                    currentCards.appendChild(card);
+                });
+            } else {
+                currentSection.classList.add('hide');
+            }
+
+            renderMatrix();
+        }
+
+        function renderMatrix() {
+            const historyContainer = document.getElementById('historyContainer');
+            
+            // 排序重點：確保學員在前，助教在後！
+            const allNames = [...appState.students, ...appState.tas];
+
+            if (allNames.length === 0 || appState.history.length === 0) {
+                historyContainer.innerHTML = '<div class="text-center text-slate-400 py-8 border border-slate-200 rounded-xl bg-slate-50 m-2 lg:m-0 mt-2">目前尚無配對紀錄</div>';
+                return;
+            }
+
+            const counts = {};
+            allNames.forEach(n1 => {
+                counts[n1] = {};
+                allNames.forEach(n2 => { counts[n1][n2] = 0; });
+            });
+
+            appState.history.forEach(record => {
+                record.pairs.forEach(pairObj => {
+                    const group = Array.isArray(pairObj) ? pairObj : pairObj.members;
+                    for(let i=0; i<group.length; i++) {
+                        for(let j=i+1; j<group.length; j++) {
+                            counts[group[i]][group[j]]++;
+                            counts[group[j]][group[i]]++;
+                        }
+                    }
+                });
+            });
+
+            let tableHtml = `<div class="overflow-auto w-full h-full relative custom-scrollbar">
+                <table class="w-full text-xs lg:text-sm text-center border-collapse">
+                    <thead class="bg-slate-100/90 backdrop-blur sticky top-0 z-20 shadow-sm">
+                        <tr>
+                            <th class="p-1.5 lg:p-2 border-b border-r sticky left-0 bg-slate-100/90 z-30 min-w-[70px]"></th>`;
+                            
+            allNames.forEach(n => {
+                const isTa = appState.tas.includes(n);
+                const isActive = appState.activeStatus[n];
+                const label = isTa ? `<span class="inline-block text-[9px] bg-indigo-200 text-indigo-800 px-1 rounded ml-1 align-middle">助</span>` : '';
+                const opacityClass = isActive ? 'text-slate-700' : 'text-slate-400 line-through decoration-slate-400 decoration-2';
+                tableHtml += `<th class="p-1.5 lg:p-2 border-b border-r whitespace-nowrap min-w-[60px] lg:min-w-[70px] font-semibold ${opacityClass}">${n}${label}</th>`;
+            });
+            tableHtml += `</tr></thead><tbody>`;
+
+            allNames.forEach(rowName => {
+                const isTaRow = appState.tas.includes(rowName);
+                const isActiveRow = appState.activeStatus[rowName];
+                const rowLabel = isTaRow ? `<span class="inline-block text-[9px] bg-indigo-200 text-indigo-800 px-1 rounded ml-1 align-middle">助</span>` : '';
+                const rowOpacityClass = isActiveRow ? 'text-slate-700' : 'text-slate-400 line-through decoration-slate-400 decoration-2';
+                
+                tableHtml += `<tr>
+                    <th class="p-1.5 lg:p-2 border-b border-r sticky left-0 bg-slate-50 z-10 whitespace-nowrap font-semibold text-right shadow-[1px_0_0_0_#e2e8f0] ${rowOpacityClass}">${rowName}${rowLabel}</th>`;
+                    
+                allNames.forEach(colName => {
+                    if (rowName === colName) {
+                        tableHtml += `<td class="p-1.5 lg:p-2 border-b border-r bg-slate-200 text-slate-400">一</td>`;
+                    } else {
+                        const count = counts[rowName][colName];
+                        if (count > 0) {
+                            tableHtml += `<td class="p-1.5 lg:p-2 border-b border-r bg-indigo-50 text-indigo-700 font-bold">${count}</td>`;
+                        } else {
+                            if (appState.tas.includes(rowName) && appState.tas.includes(colName)) {
+                                tableHtml += `<td class="p-1.5 lg:p-2 border-b border-r bg-slate-50 text-slate-300 text-[10px]">禁</td>`;
+                            } else {
+                                tableHtml += `<td class="p-1.5 lg:p-2 border-b border-r text-slate-400">0</td>`;
+                            }
+                        }
+                    }
+                });
+                tableHtml += `</tr>`;
+            });
+
+            tableHtml += `</tbody></table></div>`;
+            historyContainer.innerHTML = tableHtml;
+        }
+
+        document.getElementById('btnBackToPrepare').addEventListener('click', () => switchView('prepare'));
+        
+        document.getElementById('btnClearHistory').addEventListener('click', () => {
+            showModal(
+                "確認清除「紀錄與名單」？", 
+                "這將刪除所有的歷史配對紀錄矩陣，並且清空目前的助教與學員名單回到起始畫面。此操作無法復原。",
+                () => {
+                    appState.history = [];
+                    appState.allowedMaxCount = 0;
+                    appState.students = [];
+                    appState.tas = [];
+                    appState.activeStatus = {};
+                    saveStateToFirestore();
+                    updateResultView(null);
+                    showToast("紀錄與名單已全數清除");
+                    switchView('input');
+                },
+                null, true
+            );
+        });
+
+        // === 拖曳調整寬度功能 ===
+        const resizer = document.getElementById('resizer');
+        const leftPanel = document.getElementById('leftPanel');
+        let isResizing = false;
+
+        if (resizer && leftPanel) {
+            resizer.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                document.body.style.cursor = 'col-resize';
+                document.body.style.userSelect = 'none'; // 防止拖曳時反白文字
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                const container = document.getElementById('view-result');
+                const containerRect = container.getBoundingClientRect();
+                
+                // 計算相對容器的寬度百分比
+                let newWidth = e.clientX - containerRect.left;
+                let newWidthPercent = (newWidth / containerRect.width) * 100;
+                
+                // 限制拖曳範圍 (最窄保留 15%，最寬不超過 75%)
+                if (newWidthPercent < 15) newWidthPercent = 15;
+                if (newWidthPercent > 75) newWidthPercent = 75;
+
+                // 移除 Tailwind 的響應式寬度 class，改用 inline style 覆蓋
+                leftPanel.classList.remove('lg:w-[25%]', 'xl:w-[22%]');
+                leftPanel.style.width = `${newWidthPercent}%`;
+            });
+
+            document.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                }
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', initApp);
+
+    </script>
+</body>
+</html>
