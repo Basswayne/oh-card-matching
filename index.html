@@ -33,8 +33,20 @@
     <div id="mainContainer" class="w-full max-w-3xl bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col transition-all duration-500 ease-in-out" style="min-h: 80vh;">
         <!-- Header -->
         <header class="bg-indigo-600 text-white p-4 lg:p-5 text-center relative shrink-0">
+            <!-- 左上角：匯出/匯入備份功能 -->
+            <div class="absolute top-4 left-4 flex gap-2">
+                <button id="btnExportBackup" class="text-indigo-200 hover:text-white transition-colors p-1.5 rounded hover:bg-indigo-500 flex items-center justify-center" title="下載完整紀錄備份檔">
+                    <i class="fas fa-download"></i>
+                </button>
+                <button id="btnImportBackup" class="text-indigo-200 hover:text-white transition-colors p-1.5 rounded hover:bg-indigo-500 flex items-center justify-center" title="載入紀錄備份檔">
+                    <i class="fas fa-upload"></i>
+                </button>
+                <input type="file" id="fileInputBackup" class="hide" accept=".json">
+            </div>
+
             <h1 class="text-xl lg:text-2xl font-bold tracking-wide"><i class="fas fa-random mr-2"></i>兩兩配對分配機</h1>
             <p class="text-indigo-200 mt-1.5 text-xs lg:text-sm">學員優先全新組合 ‧ 助教不互配 ‧ 自動保存</p>
+            
             <div id="loadingStatus" class="absolute top-4 right-4 text-sm text-indigo-200 hide">
                 <i class="fas fa-circle-notch fa-spin"></i> 同步中...
             </div>
@@ -301,16 +313,17 @@
                 await loadStateFromFirestore();
             } catch (error) {
                 console.error("Init error:", error);
-                showToast("雲端連線失敗，目前將無法保存紀錄", "error");
+                showToast("雲端連線失敗，請善用匯出/載入備份功能", "error");
             } finally {
                 renderViewBasedOnState();
             }
         }
 
         async function loadStateFromFirestore() {
-            if (!db || !userId) return;
+            if (!db) return;
             try {
-                const docRef = doc(db, 'artifacts', appId, 'users', userId, 'matchData', 'state');
+                // 將儲存路徑改為公開集合並綁定 appId，避免跨裝置/清空暫存造成的 userId 更動而遺失資料
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'matchState', 'global');
                 const docSnap = await getDoc(docRef);
                 if (docSnap.exists()) {
                     const data = docSnap.data();
@@ -331,10 +344,11 @@
         }
 
         async function saveStateToFirestore() {
-            if (!db || !userId) return;
+            if (!db) return;
             loadingStatus.classList.remove('hide');
             try {
-                const docRef = doc(db, 'artifacts', appId, 'users', userId, 'matchData', 'state');
+                // 將儲存路徑改為公開集合並綁定 appId
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'matchState', 'global');
                 await setDoc(docRef, appState);
             } catch (err) {
                 console.error("Save state error:", err);
@@ -405,6 +419,53 @@
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
+
+        // === 本機匯出/載入 備份邏輯 ===
+        document.getElementById('btnExportBackup').addEventListener('click', () => {
+            if (appState.students.length === 0 && appState.tas.length === 0) {
+                showToast("目前沒有資料可以匯出", "error");
+                return;
+            }
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+            downloadAnchorNode.setAttribute("download", `配對紀錄備份_${dateStr}.json`);
+            document.body.appendChild(downloadAnchorNode); 
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+            showToast("已成功下載紀錄備份檔！");
+        });
+
+        document.getElementById('btnImportBackup').addEventListener('click', () => {
+            document.getElementById('fileInputBackup').click();
+        });
+
+        document.getElementById('fileInputBackup').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importedState = JSON.parse(event.target.result);
+                    if (importedState && Array.isArray(importedState.history)) {
+                        appState = importedState;
+                        saveStateToFirestore();
+                        renderViewBasedOnState();
+                        if (views.result.classList.contains('hide') === false) {
+                            updateResultView(appState.history[0] || null);
+                        }
+                        showToast("已成功載入備份紀錄！");
+                    } else {
+                        showToast("檔案格式不符，請選擇正確的配對備份檔", "error");
+                    }
+                } catch (err) {
+                    showToast("讀取檔案失敗", "error");
+                }
+                e.target.value = ''; // 重置 input 讓下次可以選同樣的檔案
+            };
+            reader.readAsText(file);
+        });
 
         document.getElementById('btnSubmitNames').addEventListener('click', () => {
             const rawTas = document.getElementById('tasRawInput').value.split(/[\n\r]+/);
@@ -676,6 +737,13 @@
             switchView('result');
         });
 
+        // 修正：將編輯名單功能綁定到現存的 btnBackToPrepare 按鈕
+        document.getElementById('btnBackToPrepare').addEventListener('click', () => {
+            document.getElementById('tasRawInput').value = appState.tas.join('\n');
+            document.getElementById('studentsRawInput').value = appState.students.join('\n');
+            switchView('input');
+        });
+
         function performMatch() {
             const activeTas = appState.tas.filter(n => appState.activeStatus[n]);
             const activeStudents = appState.students.filter(n => appState.activeStatus[n]);
@@ -929,9 +997,6 @@
             }
             closeEditMatrixModal();
         });
-
-
-        document.getElementById('btnBackToPrepare').addEventListener('click', () => switchView('prepare'));
         
         // === 復原上次配對邏輯 ===
         document.getElementById('btnUndoLast').addEventListener('click', () => {
