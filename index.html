@@ -298,53 +298,85 @@
 
         async function initApp() {
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    renderViewBasedOnState();
-                    return;
-                }
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-                if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
-                else await signInAnonymously(auth);
+                if (Object.keys(firebaseConfig).length > 0) {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+                    if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+                    else await signInAnonymously(auth);
 
-                userId = auth.currentUser?.uid;
-                if (!userId) throw new Error("Authentication failed");
-                await loadStateFromFirestore();
+                    userId = auth.currentUser?.uid;
+                    if (!userId) throw new Error("Authentication failed");
+                }
             } catch (error) {
                 console.error("Init error:", error);
-                showToast("雲端連線失敗，請善用匯出/載入備份功能", "error");
+                db = null; // 確保觸發降級機制
+                showToast("雲端連線未設定，系統將自動使用瀏覽器本地端儲存", "info");
             } finally {
+                await loadStateFromFirestore();
                 renderViewBasedOnState();
             }
         }
 
         async function loadStateFromFirestore() {
-            if (!db) return;
-            try {
-                // 將儲存路徑改為公開集合並綁定 appId，避免跨裝置/清空暫存造成的 userId 更動而遺失資料
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'matchState', 'global');
-                const docSnap = await getDoc(docRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    appState.students = data.students || [];
-                    appState.tas = data.tas || [];
-                    appState.history = data.history || [];
-                    appState.allowedMaxCount = data.allowedMaxCount || 0;
-                    appState.manualOverrides = data.manualOverrides || {};
-                    if (data.activeStatus) {
-                        appState.activeStatus = data.activeStatus;
-                    } else {
-                        [...appState.tas, ...appState.students].forEach(n => appState.activeStatus[n] = true);
+            let loadedFromCloud = false;
+            if (db) {
+                try {
+                    // 將儲存路徑改為公開集合並綁定 appId，避免跨裝置/清空暫存造成的 userId 更動而遺失資料
+                    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'matchState', 'global');
+                    const docSnap = await getDoc(docRef);
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        appState.students = data.students || [];
+                        appState.tas = data.tas || [];
+                        appState.history = data.history || [];
+                        appState.allowedMaxCount = data.allowedMaxCount || 0;
+                        appState.manualOverrides = data.manualOverrides || {};
+                        if (data.activeStatus) {
+                            appState.activeStatus = data.activeStatus;
+                        } else {
+                            [...appState.tas, ...appState.students].forEach(n => appState.activeStatus[n] = true);
+                        }
+                        loadedFromCloud = true;
+                    }
+                } catch (err) {
+                    console.error("Load state error:", err);
+                }
+            }
+
+            // GitHub Pages 等外部託管環境，使用 localStorage 作為本地備份讀取
+            if (!loadedFromCloud) {
+                const localData = localStorage.getItem('matchMakerData');
+                if (localData) {
+                    try {
+                        const data = JSON.parse(localData);
+                        appState.students = data.students || [];
+                        appState.tas = data.tas || [];
+                        appState.history = data.history || [];
+                        appState.allowedMaxCount = data.allowedMaxCount || 0;
+                        appState.manualOverrides = data.manualOverrides || {};
+                        if (data.activeStatus) {
+                            appState.activeStatus = data.activeStatus;
+                        } else {
+                            [...appState.tas, ...appState.students].forEach(n => appState.activeStatus[n] = true);
+                        }
+                    } catch (e) {
+                        console.error("Local storage error:", e);
                     }
                 }
-            } catch (err) {
-                console.error("Load state error:", err);
             }
         }
 
         async function saveStateToFirestore() {
-            if (!db) return;
+            // 每次儲存時，無條件備份一份到瀏覽器 localStorage (外部託管將完全依賴此機制)
+            try {
+                localStorage.setItem('matchMakerData', JSON.stringify(appState));
+            } catch (e) {
+                console.error("Local storage save error:", e);
+            }
+
+            if (!db) return; // 如果沒有雲端設定 (GitHub Pages)，儲存到本地後就結束
+            
             loadingStatus.classList.remove('hide');
             try {
                 // 將儲存路徑改為公開集合並綁定 appId
