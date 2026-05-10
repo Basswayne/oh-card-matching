@@ -91,12 +91,17 @@
                     </button>
                 </div>
 
-                <div class="flex gap-4">
-                    <button id="btnViewHistory" class="w-1/3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-4 rounded-xl transition-colors shadow-sm">
-                        查看結果
-                    </button>
-                    <button id="btnStartMatch" class="w-2/3 bg-rose-500 hover:bg-rose-600 text-white font-semibold py-3 px-4 rounded-xl transition-colors shadow-md">
-                        開始隨機配對 <i class="fas fa-bolt ml-2"></i>
+                <div class="flex flex-col sm:flex-row gap-3 w-full">
+                    <div class="flex gap-3 w-full sm:w-[45%]">
+                        <button id="btnAdjustListPrepare" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-2 rounded-xl transition-colors shadow-sm text-sm">
+                            <i class="fas fa-user-check mr-1"></i> 調整抽籤名單
+                        </button>
+                        <button id="btnViewHistory" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold py-3 px-2 rounded-xl transition-colors shadow-sm text-sm">
+                            查看結果
+                        </button>
+                    </div>
+                    <button id="btnStartMatch" class="w-full sm:w-[55%] bg-rose-500 hover:bg-rose-600 text-white font-semibold py-3 px-4 rounded-xl transition-colors shadow-md text-sm sm:text-base">
+                        開始隨機配對 <i class="fas fa-bolt ml-1"></i>
                     </button>
                 </div>
             </div>
@@ -122,7 +127,7 @@
                         </button>
                         <div class="flex gap-2">
                             <button id="btnAdjustList" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-3 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 text-sm">
-                                <i class="fas fa-user-edit"></i>調整名單
+                                <i class="fas fa-user-check"></i>調整抽籤名單
                             </button>
                             <button id="btnBackToPrepare" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-3 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 text-sm">
                                 <i class="fas fa-list-ul"></i>編輯名單
@@ -472,6 +477,7 @@
         }
 
         document.getElementById('btnAdjustList').addEventListener('click', openAdjustListModal);
+        document.getElementById('btnAdjustListPrepare').addEventListener('click', openAdjustListModal);
         document.getElementById('btnCloseAdjustListTop').addEventListener('click', closeAdjustListModal);
         document.getElementById('btnCancelAdjustList').addEventListener('click', closeAdjustListModal);
 
