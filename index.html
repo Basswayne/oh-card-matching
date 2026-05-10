@@ -18,6 +18,13 @@
         ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        
+        /* 隱藏數字輸入框的上下箭頭 (維持版面整潔) */
+        input[type=number].no-spin::-webkit-inner-spin-button, 
+        input[type=number].no-spin::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
     </style>
 </head>
 <body class="text-slate-800 antialiased min-h-screen flex flex-col items-center justify-center p-2 lg:p-4">
@@ -43,11 +50,11 @@
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">助教老師名單 (可留空)</label>
-                        <textarea id="tasRawInput" rows="3" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="例如：&#10;王老師, 李助教"></textarea>
+                        <textarea id="tasRawInput" rows="3" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="例如：&#10;王老師&#10;李助教"></textarea>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-1">學員名單</label>
-                        <textarea id="studentsRawInput" rows="6" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="例如：&#10;小明, 小華&#10;John Doe"></textarea>
+                        <textarea id="studentsRawInput" rows="6" class="w-full p-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-none transition-shadow" placeholder="例如：&#10;小明&#10;小華&#10;John Doe"></textarea>
                     </div>
                 </div>
 
@@ -147,9 +154,14 @@
                         <h3 class="text-base lg:text-lg font-semibold text-slate-800 flex items-center">
                             <i class="fas fa-table text-indigo-500 mr-2"></i>配對紀錄矩陣
                         </h3>
-                        <button id="btnClearHistory" class="text-xs lg:text-sm text-rose-500 hover:text-rose-700 transition-colors font-medium flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-rose-50">
-                            <i class="fas fa-trash-alt"></i>清除紀錄
-                        </button>
+                        <div class="flex items-center gap-1">
+                            <button id="btnEditMatrix" class="text-xs lg:text-sm text-indigo-500 hover:text-indigo-700 transition-colors font-medium flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-indigo-50">
+                                <i class="fas fa-edit"></i>手動修改
+                            </button>
+                            <button id="btnClearHistory" class="text-xs lg:text-sm text-rose-500 hover:text-rose-700 transition-colors font-medium flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-rose-50">
+                                <i class="fas fa-trash-alt"></i>清除紀錄
+                            </button>
+                        </div>
                     </div>
                     
                     <div id="historyContainer" class="flex-1 overflow-hidden flex flex-col min-h-0 border border-slate-100 rounded-xl">
@@ -205,6 +217,26 @@
         </div>
     </div>
 
+    <!-- 手動修改紀錄 Modal -->
+    <div id="editMatrixModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[105] hide opacity-0 transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl w-[95%] lg:w-11/12 max-w-5xl flex flex-col max-h-[90vh] transform scale-95 transition-transform duration-300" id="editMatrixModalContent">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl shrink-0">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800"><i class="fas fa-edit mr-2 text-indigo-600"></i>手動修改配對紀錄</h3>
+                    <p class="text-xs text-slate-500 mt-1">直接修改表格中的數字。修改後的數值將作為後續隨機抽籤的判斷依據。</p>
+                </div>
+                <button id="btnCloseEditMatrixTop" class="text-slate-400 hover:text-slate-600 transition-colors"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div class="p-2 lg:p-5 overflow-y-auto overflow-x-auto flex-1 custom-scrollbar" id="editMatrixContainer">
+                <!-- Editable matrix injected here -->
+            </div>
+            <div class="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
+                <button id="btnCancelEditMatrix" class="px-5 py-2.5 rounded-xl text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 font-medium transition-colors">取消</button>
+                <button id="btnSaveEditMatrix" class="px-5 py-2.5 rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 font-medium transition-colors shadow-sm">儲存修改</button>
+            </div>
+        </div>
+    </div>
+
     <div id="toastContainer" class="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[110] flex flex-col gap-2 pointer-events-none"></div>
 
     <script type="module">
@@ -223,7 +255,8 @@
             tas: [],
             history: [],
             activeStatus: {},
-            allowedMaxCount: 0
+            allowedMaxCount: 0,
+            manualOverrides: {} // 儲存手動修改的偏移量
         };
 
         const mainContainer = document.getElementById('mainContainer');
@@ -244,6 +277,9 @@
 
         const adjustListModal = document.getElementById('adjustListModal');
         const adjustListModalContent = document.getElementById('adjustListModalContent');
+        
+        const editMatrixModal = document.getElementById('editMatrixModal');
+        const editMatrixModalContent = document.getElementById('editMatrixModalContent');
 
         async function initApp() {
             try {
@@ -279,6 +315,7 @@
                     appState.tas = data.tas || [];
                     appState.history = data.history || [];
                     appState.allowedMaxCount = data.allowedMaxCount || 0;
+                    appState.manualOverrides = data.manualOverrides || {};
                     if (data.activeStatus) {
                         appState.activeStatus = data.activeStatus;
                     } else {
@@ -419,6 +456,11 @@
             if (type === 'ta') appState.tas = appState.tas.filter(n => n !== nameToRemove);
             else appState.students = appState.students.filter(n => n !== nameToRemove);
             delete appState.activeStatus[nameToRemove];
+            
+            // 清理已刪除人員相關的手動修改紀錄
+            const keysToRemove = Object.keys(appState.manualOverrides).filter(k => k.includes(nameToRemove));
+            keysToRemove.forEach(k => delete appState.manualOverrides[k]);
+
             saveStateToFirestore();
             updatePrepareView();
             if (appState.tas.length + appState.students.length === 0) switchView('input');
@@ -491,6 +533,49 @@
             renderMatrix(); 
         });
 
+        // == 核心：取得彙整後（含歷史紀錄與手動修改）的矩陣次數 ==
+        function getMatrixCounts() {
+            const allNames = [...appState.students, ...appState.tas]; // 學員優先
+            const counts = {};
+            const historyCounts = {}; // 僅歷史紀錄原始值
+
+            allNames.forEach(n1 => {
+                counts[n1] = {};
+                historyCounts[n1] = {};
+                allNames.forEach(n2 => { 
+                    counts[n1][n2] = 0; 
+                    historyCounts[n1][n2] = 0; 
+                });
+            });
+
+            // 統計歷史次數
+            appState.history.forEach(record => {
+                record.pairs.forEach(pairObj => {
+                    const group = Array.isArray(pairObj) ? pairObj : pairObj.members;
+                    for(let i=0; i<group.length; i++) {
+                        for(let j=i+1; j<group.length; j++) {
+                            if (historyCounts[group[i]] && historyCounts[group[i]][group[j]] !== undefined) {
+                                historyCounts[group[i]][group[j]]++;
+                                historyCounts[group[j]][group[i]]++;
+                            }
+                        }
+                    }
+                });
+            });
+
+            // 合併手動修改的偏移量
+            allNames.forEach(n1 => {
+                allNames.forEach(n2 => {
+                    if (n1 === n2) return;
+                    const key = [n1, n2].sort().join('|||');
+                    const overrideOffset = appState.manualOverrides[key] || 0;
+                    counts[n1][n2] = Math.max(0, historyCounts[n1][n2] + overrideOffset);
+                });
+            });
+
+            return { counts, historyCounts, allNames };
+        }
+
         function shuffleArray(array) {
             let arr = [...array];
             for (let i = arr.length - 1; i > 0; i--) {
@@ -500,7 +585,6 @@
             return arr;
         }
 
-        // 演算法升級：加入 Penalty 機制讓學員優先配對
         function generateOptimizedMatch(activeStudents, activeTas) {
             const totalPeople = activeStudents.length + activeTas.length;
             if (totalPeople < 2) return null;
@@ -508,30 +592,14 @@
             const numGroups = Math.floor(totalPeople / 2);
             if (activeTas.length > numGroups) return { error: "TA_OVERFLOW" };
 
-            const counts = {};
-            const allNames = [...appState.tas, ...appState.students];
-            allNames.forEach(n1 => {
-                counts[n1] = {};
-                allNames.forEach(n2 => { counts[n1][n2] = 0; });
-            });
-            
-            appState.history.forEach(record => {
-                record.pairs.forEach(pairObj => {
-                    const group = Array.isArray(pairObj) ? pairObj : pairObj.members;
-                    for(let i=0; i<group.length; i++) {
-                        for(let j=i+1; j<group.length; j++) {
-                            counts[group[i]][group[j]]++;
-                            counts[group[j]][group[i]]++;
-                        }
-                    }
-                });
-            });
+            // 取得包含手動修改後的最終次數
+            const { counts } = getMatrixCounts();
 
             const MAX_ATTEMPTS = 5000;
             let bestGroups = null;
             let minMaxEdge = Infinity; 
             let minSumEdge = Infinity; 
-            let minPenalty = Infinity; // 新增：用於減少不必要的助教配學員
+            let minPenalty = Infinity; 
 
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                 let capacities = Array(numGroups).fill(2);
@@ -572,7 +640,6 @@
                             if (c > currentMaxEdge) currentMaxEdge = c;
                             currentSumEdge += c;
 
-                            // Penalty: 如果是學員配助教，給予懲罰分數，讓演算法傾向學員互配
                             const isN1Ta = appState.tas.includes(n1);
                             const isN2Ta = appState.tas.includes(n2);
                             if (isN1Ta !== isN2Ta) {
@@ -582,7 +649,6 @@
                     }
                 }
 
-                // 比較並記錄最佳解 (考慮了 Penalty)
                 if (currentMaxEdge < minMaxEdge || 
                    (currentMaxEdge === minMaxEdge && currentSumEdge < minSumEdge) ||
                    (currentMaxEdge === minMaxEdge && currentSumEdge === minSumEdge && currentPenalty < minPenalty)) {
@@ -592,7 +658,6 @@
                     bestGroups = pairs;
                 }
 
-                // 提早結束條件：0重複且 Penalty 已達理論最低(每個助教必定佔用1學員)
                 if (minMaxEdge === 0 && minSumEdge === 0 && minPenalty === activeTas.length) {
                     break; 
                 }
@@ -699,32 +764,12 @@
 
         function renderMatrix() {
             const historyContainer = document.getElementById('historyContainer');
-            
-            // 排序重點：確保學員在前，助教在後！
-            const allNames = [...appState.students, ...appState.tas];
+            const { counts, allNames } = getMatrixCounts();
 
-            if (allNames.length === 0 || appState.history.length === 0) {
+            if (allNames.length === 0 || (appState.history.length === 0 && Object.keys(appState.manualOverrides).length === 0)) {
                 historyContainer.innerHTML = '<div class="text-center text-slate-400 py-8 border border-slate-200 rounded-xl bg-slate-50 m-2 lg:m-0 mt-2">目前尚無配對紀錄</div>';
                 return;
             }
-
-            const counts = {};
-            allNames.forEach(n1 => {
-                counts[n1] = {};
-                allNames.forEach(n2 => { counts[n1][n2] = 0; });
-            });
-
-            appState.history.forEach(record => {
-                record.pairs.forEach(pairObj => {
-                    const group = Array.isArray(pairObj) ? pairObj : pairObj.members;
-                    for(let i=0; i<group.length; i++) {
-                        for(let j=i+1; j<group.length; j++) {
-                            counts[group[i]][group[j]]++;
-                            counts[group[j]][group[i]]++;
-                        }
-                    }
-                });
-            });
 
             let tableHtml = `<div class="overflow-auto w-full h-full relative custom-scrollbar">
                 <table class="w-full text-xs lg:text-sm text-center border-collapse">
@@ -773,18 +818,129 @@
             historyContainer.innerHTML = tableHtml;
         }
 
+        // === 手動修改矩陣邏輯 ===
+        document.getElementById('btnEditMatrix').addEventListener('click', () => {
+            const container = document.getElementById('editMatrixContainer');
+            const { counts, historyCounts, allNames } = getMatrixCounts();
+            
+            if (allNames.length === 0) {
+                showToast("目前沒有名單可以修改");
+                return;
+            }
+
+            let html = `<table class="w-full text-xs lg:text-sm text-center border-collapse">
+                    <thead class="bg-slate-100/90 sticky top-0 z-20">
+                        <tr>
+                            <th class="p-2 border-b border-r sticky left-0 bg-slate-100/90 z-30"></th>`;
+            
+            allNames.forEach(n => {
+                const isTa = appState.tas.includes(n);
+                const label = isTa ? `<span class="inline-block text-[9px] bg-indigo-200 text-indigo-800 px-1 rounded ml-1 align-middle">助</span>` : '';
+                html += `<th class="p-2 border-b border-r whitespace-nowrap font-semibold text-slate-700">${n}${label}</th>`;
+            });
+            html += `</tr></thead><tbody>`;
+
+            allNames.forEach(rowName => {
+                const isTaRow = appState.tas.includes(rowName);
+                const rowLabel = isTaRow ? `<span class="inline-block text-[9px] bg-indigo-200 text-indigo-800 px-1 rounded ml-1 align-middle">助</span>` : '';
+                
+                html += `<tr>
+                    <th class="p-2 border-b border-r sticky left-0 bg-slate-50 z-10 whitespace-nowrap font-semibold text-right shadow-[1px_0_0_0_#e2e8f0] text-slate-700">${rowName}${rowLabel}</th>`;
+                    
+                allNames.forEach(colName => {
+                    if (rowName === colName) {
+                        html += `<td class="p-2 border-b border-r bg-slate-200 text-slate-400">一</td>`;
+                    } else if (appState.tas.includes(rowName) && appState.tas.includes(colName)) {
+                        html += `<td class="p-2 border-b border-r bg-slate-50 text-slate-300">禁</td>`;
+                    } else {
+                        const count = counts[rowName][colName];
+                        html += `<td class="p-2 border-b border-r bg-white">
+                                    <input type="number" min="0" class="matrix-edit-input w-12 text-center py-1 border border-slate-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-bold text-indigo-700 no-spin bg-slate-50 hover:bg-white transition-colors" 
+                                    data-n1="${rowName}" data-n2="${colName}" value="${count}">
+                                 </td>`;
+                    }
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+
+            // 加入事件監聽，讓對稱的格子(如 A配B 和 B配A)自動同步修改
+            document.querySelectorAll('.matrix-edit-input').forEach(input => {
+                input.addEventListener('input', (e) => {
+                    let val = parseInt(e.target.value);
+                    if (isNaN(val) || val < 0) { val = 0; e.target.value = 0; }
+                    const n1 = e.target.dataset.n1;
+                    const n2 = e.target.dataset.n2;
+                    const mirrorInput = document.querySelector(`.matrix-edit-input[data-n1="${n2}"][data-n2="${n1}"]`);
+                    if (mirrorInput) mirrorInput.value = val;
+                });
+            });
+
+            editMatrixModal.classList.remove('hide');
+            void editMatrixModal.offsetWidth;
+            editMatrixModal.classList.remove('opacity-0');
+            editMatrixModalContent.classList.remove('scale-95');
+        });
+
+        function closeEditMatrixModal() {
+            editMatrixModal.classList.add('opacity-0');
+            editMatrixModalContent.classList.add('scale-95');
+            setTimeout(() => editMatrixModal.classList.add('hide'), 300);
+        }
+
+        document.getElementById('btnCloseEditMatrixTop').addEventListener('click', closeEditMatrixModal);
+        document.getElementById('btnCancelEditMatrix').addEventListener('click', closeEditMatrixModal);
+
+        document.getElementById('btnSaveEditMatrix').addEventListener('click', () => {
+            const { historyCounts } = getMatrixCounts();
+            let hasChanges = false;
+
+            document.querySelectorAll('.matrix-edit-input').forEach(input => {
+                const n1 = input.dataset.n1;
+                const n2 = input.dataset.n2;
+                
+                // 只處理一半，避免重複計算（如 A->B 處理了就略過 B->A）
+                if (n1 < n2) {
+                    const newVal = parseInt(input.value) || 0;
+                    const historyVal = historyCounts[n1][n2] || 0;
+                    const overrideOffset = newVal - historyVal;
+                    const key = [n1, n2].sort().join('|||');
+
+                    if (overrideOffset !== 0) {
+                        appState.manualOverrides[key] = overrideOffset;
+                        hasChanges = true;
+                    } else {
+                        if (appState.manualOverrides[key] !== undefined) {
+                            delete appState.manualOverrides[key];
+                            hasChanges = true;
+                        }
+                    }
+                }
+            });
+
+            if (hasChanges) {
+                saveStateToFirestore();
+                renderMatrix();
+                showToast("配對紀錄已手動修改並儲存");
+            }
+            closeEditMatrixModal();
+        });
+
+
         document.getElementById('btnBackToPrepare').addEventListener('click', () => switchView('prepare'));
         
         document.getElementById('btnClearHistory').addEventListener('click', () => {
             showModal(
                 "確認清除「紀錄與名單」？", 
-                "這將刪除所有的歷史配對紀錄矩陣，並且清空目前的助教與學員名單回到起始畫面。此操作無法復原。",
+                "這將刪除所有的歷史配對紀錄矩陣、手動修改紀錄，並且清空目前的助教與學員名單回到起始畫面。此操作無法復原。",
                 () => {
                     appState.history = [];
                     appState.allowedMaxCount = 0;
                     appState.students = [];
                     appState.tas = [];
                     appState.activeStatus = {};
+                    appState.manualOverrides = {}; // 同時清除手動修改紀錄
                     saveStateToFirestore();
                     updateResultView(null);
                     showToast("紀錄與名單已全數清除");
